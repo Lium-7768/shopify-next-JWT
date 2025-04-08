@@ -20,21 +20,15 @@ export async function POST(req: NextRequest) {
 
     // 解析 Authorization 头部（Basic Auth）
     const authHeader = req.headers.get('authorization');
-    console.log('Authorization Header:', authHeader || 'Not provided');
     if (authHeader && authHeader.startsWith('Basic ')) {
       const base64Credentials = authHeader.split(' ')[1];
       const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
       const [id, secret] = credentials.split(':');
       client_id = id;
       client_secret = secret;
-      console.log('Basic Auth client_id:', client_id);
-      console.log('Basic Auth client_secret:', client_secret);
-    } else {
-      console.log('No Basic Auth header found');
     }
 
     const contentType = req.headers.get('content-type') || '';
-    console.log('Content-Type:', contentType);
 
     // 解析请求体
     if (contentType.includes('application/json')) {
@@ -43,11 +37,8 @@ export async function POST(req: NextRequest) {
       const formData = await req.formData();
       body = Object.fromEntries(formData);
     } else {
-      console.log('Validation failed: Unsupported content type');
-      return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
+      return NextResponse.json({ error: 'unsupported_content_type' }, { status: 400 });
     }
-
-    console.log('Raw request body:', body);
 
     const { grant_type, code, redirect_uri, code_verifier } = body;
 
@@ -55,33 +46,21 @@ export async function POST(req: NextRequest) {
     if (!client_id) client_id = body.client_id;
     if (!client_secret) client_secret = body.client_secret;
 
-    console.log('Received grant_type:', grant_type);
-    console.log('Received code:', code);
-    console.log('Received redirect_uri:', redirect_uri);
-    console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
-    console.log('Environment CLIENT_SECRET:', process.env.CLIENT_SECRET);
-    console.log('Received client_id:', client_id);
-    console.log('Received client_secret:', client_secret);
-    console.log('Received code_verifier:', code_verifier);
-
     if (grant_type !== 'authorization_code') {
-      console.log('Validation failed: Unsupported grant_type');
-      return NextResponse.json({ error: 'Unsupported grant_type' }, { status: 400 });
+      return NextResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
     }
 
     if (client_id !== process.env.CLIENT_ID || client_secret !== process.env.CLIENT_SECRET) {
-      console.log('Validation failed: Invalid client credentials');
-      return NextResponse.json({ error: 'Invalid client credentials' }, { status: 401 });
+      return NextResponse.json({ error: 'invalid_client' }, { status: 401 });
     }
 
-    if (redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
-      console.log('Validation failed: Invalid redirect_uri');
-      return NextResponse.json({ error: 'Invalid redirect_uri' }, { status: 400 });
+    if (!redirect_uri.startsWith('https://shopify.com/authentication/')) {
+      return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
     if (!process.env.PRIVATE_KEY) {
       console.error('PRIVATE_KEY is not set in environment variables');
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return NextResponse.json({ error: 'server_error' }, { status: 500 });
     }
 
     // 导入私钥
@@ -94,32 +73,32 @@ export async function POST(req: NextRequest) {
         clockTolerance: 0,
       });
       authData = payload as AuthData;
-      console.log('Decoded authData:', authData);
     } catch (error) {
-      console.log('Validation failed: Invalid or expired code', error);
-      return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 });
+      return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
     }
 
     // 如果 code_challenge 存在，则必须验证 code_verifier
     if (authData.code_challenge) {
       if (!code_verifier) {
-        console.log('Validation failed: Missing code_verifier');
-        return NextResponse.json({ error: 'Missing code_verifier' }, { status: 400 });
+        return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
       }
       const verifierHash = createHash('sha256').update(code_verifier).digest('base64url');
       if (verifierHash !== authData.code_challenge) {
-        console.log('Validation failed: Invalid code_verifier');
-        return NextResponse.json({ error: 'Invalid code_verifier' }, { status: 400 });
+        return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
       }
-    } else {
-      console.log('No code_challenge provided in authData, skipping PKCE verification');
     }
 
+    const now = Math.floor(Date.now() / 1000);
+    const expiresIn = 3600; // 1 hour
+
     // 生成 access_token
-    const accessToken = await new SignJWT({ sub: authData.user.id })
-      .setProtectedHeader({ alg: 'RS256' })
+    const accessToken = await new SignJWT({
+      sub: authData.user.id,
+      scope: 'openid email',
+    })
+      .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
       .setIssuedAt()
-      .setExpirationTime('1h')
+      .setExpirationTime(now + expiresIn)
       .sign(privateKey);
 
     // 生成 id_token
@@ -128,23 +107,32 @@ export async function POST(req: NextRequest) {
       email: authData.user.email,
       iss: 'https://shopify-next-jwt.vercel.app',
       aud: client_id,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: now,
+      exp: now + expiresIn,
     })
-      .setProtectedHeader({ alg: 'RS256' })
+      .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
       .sign(privateKey);
 
-    console.log('Generated access_token:', accessToken);
-    console.log('Generated id_token:', idToken);
+    // 生成 refresh_token
+    const refreshToken = await new SignJWT({
+      sub: authData.user.id,
+      type: 'refresh',
+    })
+      .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+      .setIssuedAt()
+      .setExpirationTime('30d') // 30天有效期
+      .sign(privateKey);
 
     return NextResponse.json({
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: 3600,
+      expires_in: expiresIn,
+      refresh_token: refreshToken,
       id_token: idToken,
+      scope: 'openid email',
     });
   } catch (error) {
     console.error('Unexpected error in /api/token:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 }
