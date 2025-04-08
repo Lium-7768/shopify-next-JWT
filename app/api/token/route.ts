@@ -14,10 +14,26 @@ interface AuthData {
 
 export async function POST(req: NextRequest) {
   let body: any;
+  let client_id: string | undefined;
+  let client_secret: string | undefined;
+
+  // 解析 Authorization 头部（Basic Auth）
+  const authHeader = req.headers.get('authorization');
+  console.log('Authorization Header:', authHeader);
+  if (authHeader && authHeader.startsWith('Basic ')) {
+    const base64Credentials = authHeader.split(' ')[1];
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const [id, secret] = credentials.split(':');
+    client_id = id;
+    client_secret = secret;
+    console.log('Basic Auth client_id:', client_id);
+    console.log('Basic Auth client_secret:', client_secret);
+  }
+
   const contentType = req.headers.get('content-type') || '';
   console.log('Content-Type:', contentType);
 
-  // 支持 application/json 和 application/x-www-form-urlencoded
+  // 解析请求体
   if (contentType.includes('application/json')) {
     body = await req.json();
   } else if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -30,7 +46,11 @@ export async function POST(req: NextRequest) {
 
   console.log('Raw request body:', body);
 
-  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = body;
+  const { grant_type, code, redirect_uri, code_verifier } = body;
+
+  // 如果没有从 Basic Auth 获取 client_id 和 client_secret，则尝试从请求体中获取
+  if (!client_id) client_id = body.client_id;
+  if (!client_secret) client_secret = body.client_secret;
 
   console.log('Received grant_type:', grant_type);
   console.log('Received code:', code);
