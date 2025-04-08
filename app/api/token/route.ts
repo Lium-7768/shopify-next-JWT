@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify, importPKCS8 } from 'jose';
 import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { PRIVATE_KEY } from '@/app/constants/keys';
+import crypto from 'crypto';
 
 interface ApiError extends Error {
   message: string;
@@ -12,9 +13,14 @@ interface AuthData {
   user: {
     id: string;
     email: string;
+    name?: string;
+    given_name?: string;
+    family_name?: string;
+    locale?: string;
   };
   code_challenge?: string;
   exp: number;
+  nonce: string;
   [key: string]: any;
 }
 
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_client' }, { status: 401 });
     }
 
-    if (!redirect_uri.startsWith('https://shopify.com/authentication/')) {
+    if (!redirect_uri.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
       console.log('Invalid redirect_uri:', redirect_uri);
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
@@ -128,23 +134,32 @@ export async function POST(req: NextRequest) {
       // 生成 access_token
       const accessToken = await new SignJWT({
         sub: authData.user.id,
-        scope: 'openid email',
+        scope: 'openid profile email customer_read customer_write',
+        iss: baseUrl,
+        aud: client_id,
+        jti: crypto.randomUUID(),
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .setIssuedAt()
         .setExpirationTime(now + expiresIn)
-        .setIssuer(baseUrl)
-        .setAudience(client_id || '')
         .sign(privateKey);
 
       // 生成 id_token
       const idToken = await new SignJWT({
         sub: authData.user.id,
         email: authData.user.email,
+        email_verified: true,
+        name: authData.user.name || authData.user.email.split('@')[0],
+        given_name: authData.user.given_name || '',
+        family_name: authData.user.family_name || '',
+        locale: authData.user.locale || 'en',
         iss: baseUrl,
         aud: client_id,
         iat: now,
         exp: now + expiresIn,
+        auth_time: now,
+        nonce: authData.nonce,
+        at_hash: createHash('sha256').update(accessToken).digest('base64url').substring(0, 32),
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .sign(privateKey);
@@ -153,6 +168,8 @@ export async function POST(req: NextRequest) {
       const refreshToken = await new SignJWT({
         sub: authData.user.id,
         type: 'refresh',
+        scope: 'openid profile email customer_read customer_write',
+        jti: crypto.randomUUID(),
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .setIssuedAt()
@@ -163,14 +180,25 @@ export async function POST(req: NextRequest) {
 
       console.log('Tokens generated successfully');
 
-      return NextResponse.json({
-        access_token: accessToken,
-        token_type: 'Bearer',
-        expires_in: expiresIn,
-        refresh_token: refreshToken,
-        id_token: idToken,
-        scope: 'openid email',
-      });
+      // Return response with proper headers
+      return new NextResponse(
+        JSON.stringify({
+          access_token: accessToken,
+          token_type: 'Bearer',
+          expires_in: expiresIn,
+          refresh_token: refreshToken,
+          id_token: idToken,
+          scope: 'openid profile email customer_read customer_write'
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache'
+          }
+        }
+      );
     } catch (error: unknown) {
       const apiError = error as ApiError;
       console.error('Error processing private key:', apiError);

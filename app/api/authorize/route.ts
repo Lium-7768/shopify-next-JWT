@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized_client' }, { status: 401 });
   }
 
-  if (!redirect_uri?.startsWith('https://shopify.com/authentication/')) {
+  if (!redirect_uri?.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
     console.log('Invalid redirect_uri:', redirect_uri);
     return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
   }
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'unauthorized_client' }, { status: 401 });
     }
 
-    if (!redirect_uri?.startsWith('https://shopify.com/authentication/')) {
+    if (!redirect_uri?.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
       console.log('Invalid redirect_uri:', redirect_uri);
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
