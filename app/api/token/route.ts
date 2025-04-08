@@ -15,18 +15,29 @@ interface AuthData {
 export async function POST(req: NextRequest) {
   const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = await req.json();
 
-  if (grant_type !== 'authorization_code') {
-    return NextResponse.json({ error: 'Unsupported grant_type' }, { status: 400 });
-  }
-
+  console.log('Received grant_type:', grant_type);
+  console.log('Received code:', code);
+  console.log('Received redirect_uri:', redirect_uri);
   console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
   console.log('Environment CLIENT_SECRET:', process.env.CLIENT_SECRET);
   console.log('Received client_id:', client_id);
   console.log('Received client_secret:', client_secret);
+  console.log('Received code_verifier:', code_verifier);
+
+  if (grant_type !== 'authorization_code') {
+    console.log('Validation failed: Unsupported grant_type');
+    return NextResponse.json({ error: 'Unsupported grant_type' }, { status: 400 });
+  }
 
   if (client_id !== process.env.CLIENT_ID || client_secret !== process.env.CLIENT_SECRET) {
     console.log('Validation failed: Invalid client credentials');
     return NextResponse.json({ error: 'Invalid client credentials' }, { status: 400 });
+  }
+
+  // 添加 redirect_uri 验证
+  if (redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
+    console.log('Validation failed: Invalid redirect_uri');
+    return NextResponse.json({ error: 'Invalid redirect_uri' }, { status: 400 });
   }
 
   const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
@@ -34,16 +45,20 @@ export async function POST(req: NextRequest) {
   try {
     const { payload } = await jwtVerify(code, secret, { algorithms: ['HS256'] });
     authData = payload as AuthData;
+    console.log('Decoded authData:', authData);
   } catch (error) {
+    console.log('Validation failed: Invalid or expired code', error);
     return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 });
   }
 
   if (authData.code_challenge) {
     if (!code_verifier) {
+      console.log('Validation failed: Missing code_verifier');
       return NextResponse.json({ error: 'Missing code_verifier' }, { status: 400 });
     }
     const verifierHash = createHash('sha256').update(code_verifier).digest('base64url');
     if (verifierHash !== authData.code_challenge) {
+      console.log('Validation failed: Invalid code_verifier');
       return NextResponse.json({ error: 'Invalid code_verifier' }, { status: 400 });
     }
   }
