@@ -1,4 +1,6 @@
-export default function handler(req, res) {
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(req: NextRequest) {
   const config = {
     issuer: 'https://shopify-next-jwt.vercel.app',
     authorization_endpoint: 'https://shopify-next-jwt.vercel.app/api/authorize',
@@ -11,5 +13,5 @@ export default function handler(req, res) {
     scopes_supported: ['openid', 'email'],
     id_token_signing_alg_values_supported: ['HS256'],
   };
-  res.status(200).json(config);
+  return NextResponse.json(config);
 }
