@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify, importPKCS8 } from 'jose';
-import { createHash } from 'crypto';
+import { createHash, createPublicKey } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { PRIVATE_KEY } from '@/app/constants/keys';
 import crypto from 'crypto';
@@ -87,14 +87,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
-    console.log('Importing private key...');
+    console.log('Importing keys...');
     try {
+      // 从私钥创建公钥
+      const publicKey = createPublicKey({
+        key: PRIVATE_KEY,
+        format: 'pem',
+      });
+
+      // 导入私钥用于签名
       const privateKey = await importPKCS8(PRIVATE_KEY, 'RS256');
-      console.log('Private key imported successfully');
+
+      console.log('Keys imported successfully');
 
       let authData: AuthData;
       try {
-        const { payload } = await jwtVerify(code, privateKey, {
+        // 使用公钥验证 code
+        const { payload } = await jwtVerify(code, publicKey, {
           algorithms: ['RS256'],
           clockTolerance: 60,  // Allow 1 minute clock skew
           issuer: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
@@ -131,9 +140,11 @@ export async function POST(req: NextRequest) {
 
       console.log('Generating tokens...');
 
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
+
       // 生成 access_token
       const accessToken = await new SignJWT({
-        iss: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
+        iss: baseUrl,
         sub: authData.sub,
         aud: client_id,
         jti: crypto.randomUUID(),
@@ -146,7 +157,7 @@ export async function POST(req: NextRequest) {
 
       // 生成 id_token
       const idToken = await new SignJWT({
-        iss: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
+        iss: baseUrl,
         sub: authData.sub,
         aud: client_id,
         exp: now + expiresIn,
@@ -186,7 +197,7 @@ export async function POST(req: NextRequest) {
       );
     } catch (error: unknown) {
       const apiError = error as ApiError;
-      console.error('Error processing private key:', apiError);
+      console.error('Error processing keys:', apiError);
       return NextResponse.json({ error: 'server_error', details: apiError.message }, { status: 500 });
     }
   } catch (error: unknown) {

@@ -145,8 +145,10 @@ export async function POST(req: NextRequest) {
           locale: user.locale || 'en'
         }
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+        .setProtectedHeader({ alg: 'RS256', typ: 'at+jwt', kid: '1' })
         .setJti(crypto.randomUUID())
+        .setIssuedAt()
+        .setExpirationTime(now + 600)
         .sign(privateKey);
 
       console.log('JWT code generated successfully');
