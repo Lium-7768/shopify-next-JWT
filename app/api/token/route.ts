@@ -123,26 +123,30 @@ export async function POST(req: NextRequest) {
 
       console.log('Generating tokens...');
 
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
+
       // 生成 access_token
       const accessToken = await new SignJWT({
         sub: authData.user.id,
         scope: 'openid email',
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .setIssuedAt()
         .setExpirationTime(now + expiresIn)
+        .setIssuer(baseUrl)
+        .setAudience(client_id || '')
         .sign(privateKey);
 
       // 生成 id_token
       const idToken = await new SignJWT({
         sub: authData.user.id,
         email: authData.user.email,
-        iss: 'https://shopify-next-jwt.vercel.app',
+        iss: baseUrl,
         aud: client_id,
         iat: now,
         exp: now + expiresIn,
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .sign(privateKey);
 
       // 生成 refresh_token
@@ -150,9 +154,11 @@ export async function POST(req: NextRequest) {
         sub: authData.user.id,
         type: 'refresh',
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .setIssuedAt()
-        .setExpirationTime('30d') // 30天有效期
+        .setExpirationTime('30d')
+        .setIssuer(baseUrl)
+        .setAudience(client_id || '')
         .sign(privateKey);
 
       console.log('Tokens generated successfully');

@@ -19,12 +19,26 @@ export async function GET(req: NextRequest) {
       use: 'sig',
       alg: 'RS256',
       kid: '1', // Key ID
+      kty: 'RSA',
     };
 
-    // Return JWKS
-    return NextResponse.json({
-      keys: [completeJwk]
-    });
+    // Ensure all required RSA JWK parameters are present
+    if (!completeJwk.n || !completeJwk.e) {
+      throw new Error('Missing required RSA parameters');
+    }
+
+    // Return JWKS with proper content type
+    return new NextResponse(
+      JSON.stringify({ keys: [completeJwk] }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400'
+        }
+      }
+    );
   } catch (error) {
     console.error('Error generating JWKS:', error);
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
