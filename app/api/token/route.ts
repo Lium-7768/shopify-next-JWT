@@ -96,7 +96,9 @@ export async function POST(req: NextRequest) {
       try {
         const { payload } = await jwtVerify(code, privateKey, {
           algorithms: ['RS256'],
-          clockTolerance: 0,
+          clockTolerance: 60,  // Allow 1 minute clock skew
+          issuer: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
+          audience: client_id,
         });
         authData = payload as AuthData;
         console.log('Code verification successful');
@@ -129,15 +131,13 @@ export async function POST(req: NextRequest) {
 
       console.log('Generating tokens...');
 
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
-
       // 生成 access_token
       const accessToken = await new SignJWT({
-        sub: authData.user.id,
-        scope: 'openid profile email customer_read customer_write',
-        iss: baseUrl,
+        iss: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
+        sub: authData.sub,
         aud: client_id,
         jti: crypto.randomUUID(),
+        scope: authData.scope,
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
         .setIssuedAt()
@@ -146,36 +146,22 @@ export async function POST(req: NextRequest) {
 
       // 生成 id_token
       const idToken = await new SignJWT({
-        sub: authData.user.id,
+        iss: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
+        sub: authData.sub,
+        aud: client_id,
+        exp: now + expiresIn,
+        iat: now,
+        auth_time: authData.auth_time,
+        nonce: authData.nonce,
         email: authData.user.email,
         email_verified: true,
-        name: authData.user.name || authData.user.email.split('@')[0],
-        given_name: authData.user.given_name || '',
-        family_name: authData.user.family_name || '',
-        locale: authData.user.locale || 'en',
-        iss: baseUrl,
-        aud: client_id,
-        iat: now,
-        exp: now + expiresIn,
-        auth_time: now,
-        nonce: authData.nonce,
+        name: authData.user.name,
+        given_name: authData.user.given_name,
+        family_name: authData.user.family_name,
+        locale: authData.user.locale,
         at_hash: createHash('sha256').update(accessToken).digest('base64url').substring(0, 32),
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
-        .sign(privateKey);
-
-      // 生成 refresh_token
-      const refreshToken = await new SignJWT({
-        sub: authData.user.id,
-        type: 'refresh',
-        scope: 'openid profile email customer_read customer_write',
-        jti: crypto.randomUUID(),
-      })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
-        .setIssuedAt()
-        .setExpirationTime('30d')
-        .setIssuer(baseUrl)
-        .setAudience(client_id || '')
         .sign(privateKey);
 
       console.log('Tokens generated successfully');
@@ -186,9 +172,8 @@ export async function POST(req: NextRequest) {
           access_token: accessToken,
           token_type: 'Bearer',
           expires_in: expiresIn,
-          refresh_token: refreshToken,
           id_token: idToken,
-          scope: 'openid profile email customer_read customer_write'
+          scope: authData.scope
         }),
         {
           status: 200,

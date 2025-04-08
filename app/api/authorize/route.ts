@@ -1,11 +1,14 @@
 import { SignJWT, importPKCS8 } from 'jose';
 import { NextRequest, NextResponse } from 'next/server';
 import { PRIVATE_KEY } from '@/app/constants/keys';
+import crypto from 'crypto';
 
 interface ApiError extends Error {
   message: string;
   code?: string;
 }
+
+const VALID_SCOPES = ['openid', 'profile', 'email', 'customer_read', 'customer_write'];
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -13,6 +16,7 @@ export async function GET(req: NextRequest) {
   const redirect_uri = searchParams.get('redirect_uri');
   const scope = searchParams.get('scope');
   const state = searchParams.get('state');
+  const nonce = searchParams.get('nonce');
   const response_type = searchParams.get('response_type');
   const code_challenge = searchParams.get('code_challenge');
   const code_challenge_method = searchParams.get('code_challenge_method');
@@ -22,6 +26,7 @@ export async function GET(req: NextRequest) {
     redirect_uri,
     scope,
     state,
+    nonce,
     response_type,
     code_challenge,
     code_challenge_method
@@ -52,6 +57,7 @@ export async function GET(req: NextRequest) {
   redirectUrl.searchParams.set('redirect_uri', redirect_uri || '');
   redirectUrl.searchParams.set('scope', scope || '');
   redirectUrl.searchParams.set('state', state || '');
+  redirectUrl.searchParams.set('nonce', nonce || '');
   redirectUrl.searchParams.set('response_type', response_type || '');
   if (code_challenge) {
     redirectUrl.searchParams.set('code_challenge', code_challenge);
@@ -72,6 +78,7 @@ export async function POST(req: NextRequest) {
       redirect_uri,
       scope,
       state,
+      nonce,
       response_type,
       code_challenge,
       code_challenge_method,
@@ -98,18 +105,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
+    // Validate scopes
+    if (scope) {
+      const requestedScopes = scope.split(' ');
+      const invalidScopes = requestedScopes.filter((s: string) => !VALID_SCOPES.includes(s));
+      if (invalidScopes.length > 0) {
+        console.log('Invalid scopes:', invalidScopes);
+        return NextResponse.json({ error: 'invalid_scope' }, { status: 400 });
+      }
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
+
     console.log('Importing private key...');
     try {
       const privateKey = await importPKCS8(PRIVATE_KEY, 'RS256');
       console.log('Private key imported successfully');
 
+      const now = Math.floor(Date.now() / 1000);
+
       const code = await new SignJWT({
-        user,
+        iss: baseUrl,
+        sub: user.id,
+        aud: client_id,
+        exp: now + 600, // 10 minutes
+        iat: now,
+        auth_time: now,
+        nonce: nonce,
         code_challenge,
-        scope: scope || 'openid email'
+        code_challenge_method,
+        scope: scope || 'openid profile email',
+        user: {
+          id: user.id,
+          email: user.email,
+          email_verified: true,
+          name: user.name || user.email.split('@')[0],
+          given_name: user.given_name || '',
+          family_name: user.family_name || '',
+          locale: user.locale || 'en'
+        }
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
-        .setExpirationTime('10m')
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+        .setJti(crypto.randomUUID())
         .sign(privateKey);
 
       console.log('JWT code generated successfully');
