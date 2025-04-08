@@ -14,8 +14,8 @@ export default function Login() {
   const code_challenge = searchParams.get('code_challenge');
   const code_challenge_method = searchParams.get('code_challenge_method');
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('user@example.com');
+  const [password, setPassword] = useState('password123');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
