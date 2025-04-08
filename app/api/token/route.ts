@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   // 解析 Authorization 头部（Basic Auth）
   const authHeader = req.headers.get('authorization');
-  console.log('Authorization Header:', authHeader);
+  console.log('Authorization Header:', authHeader || 'Not provided');
   if (authHeader && authHeader.startsWith('Basic ')) {
     const base64Credentials = authHeader.split(' ')[1];
     const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
     client_secret = secret;
     console.log('Basic Auth client_id:', client_id);
     console.log('Basic Auth client_secret:', client_secret);
+  } else {
+    console.log('No Basic Auth header found');
   }
 
   const contentType = req.headers.get('content-type') || '';
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid redirect_uri' }, { status: 400 });
   }
 
-  const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
+  const secret = createSecretKey(process.env.JWT_SECRET || '8f1d2a9b3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0', 'utf-8');
   let authData: AuthData;
   try {
     const { payload } = await jwtVerify(code, secret, { algorithms: ['HS256'] });

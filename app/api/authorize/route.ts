@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
   }
 
-  const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
+  const secret = createSecretKey(process.env.JWT_SECRET || '8f1d2a9b3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0', 'utf-8');
   const code = await new SignJWT({
     user,
     code_challenge,
