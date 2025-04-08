@@ -2,29 +2,16 @@ import { SignJWT } from 'jose';
 import { createSecretKey } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
-interface AuthData {
-  user: {
-    id: string;
-    email: string;
-  };
-  code_challenge?: string;
-  exp: number;
-  [key: string]: any;
-}
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const client_id = searchParams.get('client_id');
   const redirect_uri = searchParams.get('redirect_uri');
-  const scope = searchParams.get('scope') || '';
+  const scope = searchParams.get('scope');
   const state = searchParams.get('state');
   const response_type = searchParams.get('response_type');
   const code_challenge = searchParams.get('code_challenge');
   const code_challenge_method = searchParams.get('code_challenge_method');
 
-  // 添加更多日志
-  console.log('Full request URL:', req.url);
-  console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
   console.log('Received client_id:', client_id);
   console.log('Received redirect_uri:', redirect_uri);
   console.log('Received scope:', scope);
@@ -33,35 +20,39 @@ export async function GET(req: NextRequest) {
   console.log('Received code_challenge:', code_challenge);
   console.log('Received code_challenge_method:', code_challenge_method);
 
-  if (client_id !== process.env.CLIENT_ID || redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
-    console.log('Validation failed: Invalid client_id or redirect_uri');
-    return NextResponse.json({ error: 'Invalid client_id or redirect_uri' }, { status: 400 });
-  }
-
   if (response_type !== 'code') {
     console.log('Validation failed: Unsupported response_type');
     return NextResponse.json({ error: 'Unsupported response_type' }, { status: 400 });
   }
 
-  if (!scope.includes('openid') || !scope.includes('email')) {
-    console.log('Validation failed: Invalid scope');
-    return NextResponse.json({ error: 'Invalid scope' }, { status: 400 });
+  if (client_id !== process.env.CLIENT_ID) {
+    console.log('Validation failed: Invalid client_id');
+    return NextResponse.json({ error: 'Invalid client_id' }, { status: 400 });
   }
 
+  // 如果使用 PKCE，确保 code_challenge 和 code_challenge_method 存在
   if (code_challenge && code_challenge_method !== 'S256') {
     console.log('Validation failed: Unsupported code_challenge_method');
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
   }
 
-  const loginUrl = `/login?${searchParams.toString()}`;
-  console.log('Redirecting to login URL:', loginUrl);
-  return NextResponse.redirect(new URL(loginUrl, req.url));
+  const redirectUrl = new URL('/login', req.url);
+  redirectUrl.searchParams.set('client_id', client_id || '');
+  redirectUrl.searchParams.set('redirect_uri', redirect_uri || '');
+  redirectUrl.searchParams.set('scope', scope || '');
+  redirectUrl.searchParams.set('state', state || '');
+  redirectUrl.searchParams.set('response_type', response_type || '');
+  redirectUrl.searchParams.set('code_challenge', code_challenge || '');
+  redirectUrl.searchParams.set('code_challenge_method', code_challenge_method || '');
+
+  console.log('Redirecting to:', redirectUrl.toString());
+  return NextResponse.redirect(redirectUrl);
 }
 
 export async function POST(req: NextRequest) {
-  const { client_id, redirect_uri, scope, state, response_type, code_challenge, code_challenge_method, user } = await req.json();
+  const body = await req.json();
+  const { client_id, redirect_uri, scope, state, response_type, code_challenge, code_challenge_method, user } = body;
 
-  console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
   console.log('Received client_id:', client_id);
   console.log('Received redirect_uri:', redirect_uri);
   console.log('Received scope:', scope);
@@ -71,19 +62,14 @@ export async function POST(req: NextRequest) {
   console.log('Received code_challenge_method:', code_challenge_method);
   console.log('Received user:', user);
 
-  if (client_id !== process.env.CLIENT_ID || redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
-    console.log('Validation failed: Invalid client_id or redirect_uri');
-    return NextResponse.json({ error: 'Invalid client_id or redirect_uri' }, { status: 400 });
-  }
-
   if (response_type !== 'code') {
     console.log('Validation failed: Unsupported response_type');
     return NextResponse.json({ error: 'Unsupported response_type' }, { status: 400 });
   }
 
-  if (!scope.includes('openid') || !scope.includes('email')) {
-    console.log('Validation failed: Invalid scope');
-    return NextResponse.json({ error: 'Invalid scope' }, { status: 400 });
+  if (client_id !== process.env.CLIENT_ID) {
+    console.log('Validation failed: Invalid client_id');
+    return NextResponse.json({ error: 'Invalid client_id' }, { status: 400 });
   }
 
   if (code_challenge && code_challenge_method !== 'S256') {
@@ -91,16 +77,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
   }
 
-  const secret = createSecretKey(process.env.JWT_SECRET || '8f1d2a9b3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0', 'utf-8');
-  const code = await new SignJWT({
-    user,
-    code_challenge,
-    exp: Math.floor(Date.now() / 1000) + 600,
-  })
+  if (!process.env.JWT_SECRET) {
+    console.error('JWT_SECRET is not set in environment variables');
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+
+  const secret = createSecretKey(process.env.JWT_SECRET, 'utf-8');
+  const code = await new SignJWT({ user, code_challenge })
     .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('10m')
     .sign(secret);
 
-  const redirectUrl = `${redirect_uri}?code=${code}&state=${state}`;
-  console.log('Generated redirectUrl:', redirectUrl);
-  return NextResponse.json({ redirectUrl });
+  const redirectUrl = new URL(redirect_uri);
+  redirectUrl.searchParams.set('code', code);
+  redirectUrl.searchParams.set('state', state);
+
+  console.log('Generated redirectUrl:', redirectUrl.toString());
+  return NextResponse.json({ redirectUrl: redirectUrl.toString() });
 }
