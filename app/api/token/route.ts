@@ -1,5 +1,5 @@
-import { SignJWT, jwtVerify } from 'jose';
-import { createSecretKey, createHash } from 'crypto';
+import { SignJWT, jwtVerify, importPKCS8 } from 'jose';
+import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 interface AuthData {
@@ -79,17 +79,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid redirect_uri' }, { status: 400 });
     }
 
-    if (!process.env.JWT_SECRET) {
-      console.error('JWT_SECRET is not set in environment variables');
+    if (!process.env.PRIVATE_KEY) {
+      console.error('PRIVATE_KEY is not set in environment variables');
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 
-    const secret = createSecretKey(process.env.JWT_SECRET, 'utf-8');
+    // 导入私钥
+    const privateKey = await importPKCS8(process.env.PRIVATE_KEY, 'RS256');
+
     let authData: AuthData;
     try {
-      const { payload } = await jwtVerify(code, secret, {
-        algorithms: ['HS256'],
-        clockTolerance: 0, // 不允许时钟偏差
+      const { payload } = await jwtVerify(code, privateKey, {
+        algorithms: ['RS256'],
+        clockTolerance: 0,
       });
       authData = payload as AuthData;
       console.log('Decoded authData:', authData);
@@ -115,10 +117,10 @@ export async function POST(req: NextRequest) {
 
     // 生成 access_token
     const accessToken = await new SignJWT({ sub: authData.user.id })
-      .setProtectedHeader({ alg: 'HS256' })
+      .setProtectedHeader({ alg: 'RS256' })
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(secret);
+      .sign(privateKey);
 
     // 生成 id_token
     const idToken = await new SignJWT({
@@ -129,8 +131,8 @@ export async function POST(req: NextRequest) {
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     })
-      .setProtectedHeader({ alg: 'HS256' })
-      .sign(secret);
+      .setProtectedHeader({ alg: 'RS256' })
+      .sign(privateKey);
 
     console.log('Generated access_token:', accessToken);
     console.log('Generated id_token:', idToken);

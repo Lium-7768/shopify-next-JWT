@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
         kty: 'oct',
         kid: '1',
         use: 'sig',
-        alg: 'HS256',
+        alg: 'RS256',
       },
     ],
   };

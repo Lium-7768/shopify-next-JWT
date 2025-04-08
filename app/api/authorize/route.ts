@@ -1,5 +1,4 @@
-import { SignJWT } from 'jose';
-import { createSecretKey } from 'crypto';
+import { SignJWT, importPKCS8 } from 'jose';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
@@ -30,7 +29,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid client_id' }, { status: 400 });
   }
 
-  // 如果使用 PKCE，确保 code_challenge 和 code_challenge_method 存在
   if (code_challenge && code_challenge_method !== 'S256') {
     console.log('Validation failed: Unsupported code_challenge_method');
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
@@ -77,16 +75,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
   }
 
-  if (!process.env.JWT_SECRET) {
-    console.error('JWT_SECRET is not set in environment variables');
+  if (!process.env.PRIVATE_KEY) {
+    console.error('PRIVATE_KEY is not set in environment variables');
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
-  const secret = createSecretKey(process.env.JWT_SECRET, 'utf-8');
+  // 导入私钥
+  const privateKey = await importPKCS8(process.env.PRIVATE_KEY, 'RS256');
+
   const code = await new SignJWT({ user, code_challenge })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'RS256' })
     .setExpirationTime('10m')
-    .sign(secret);
+    .sign(privateKey);
 
   const redirectUrl = new URL(redirect_uri);
   redirectUrl.searchParams.set('code', code);
