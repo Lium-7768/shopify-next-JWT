@@ -2,7 +2,6 @@ import { SignJWT } from 'jose';
 import { createSecretKey } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
-// 定义 JWT payload 的类型，添加索引签名以兼容 JWTPayload
 interface AuthData {
   user: {
     id: string;
@@ -10,7 +9,7 @@ interface AuthData {
   };
   code_challenge?: string;
   exp: number;
-  [key: string]: any; // 添加索引签名
+  [key: string]: any;
 }
 
 export async function GET(req: NextRequest) {
@@ -23,7 +22,12 @@ export async function GET(req: NextRequest) {
   const code_challenge = searchParams.get('code_challenge');
   const code_challenge_method = searchParams.get('code_challenge_method');
 
-  if (client_id !== process.env.CLIENT_ID || !redirect_uri?.startsWith('https://your-shopify-store.myshopify.com')) {
+  console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
+  console.log('Received client_id:', client_id);
+  console.log('Received redirect_uri:', redirect_uri);
+
+  if (client_id !== process.env.CLIENT_ID || redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
+    console.log('Validation failed: Invalid client_id or redirect_uri');
     return NextResponse.json({ error: 'Invalid client_id or redirect_uri' }, { status: 400 });
   }
 
@@ -46,7 +50,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { client_id, redirect_uri, scope, state, response_type, code_challenge, code_challenge_method, user } = await req.json();
 
-  if (client_id !== process.env.CLIENT_ID || !redirect_uri?.startsWith('https://your-shopify-store.myshopify.com')) {
+  console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
+  console.log('Received client_id:', client_id);
+  console.log('Received redirect_uri:', redirect_uri);
+
+  if (client_id !== process.env.CLIENT_ID || redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
+    console.log('Validation failed: Invalid client_id or redirect_uri');
     return NextResponse.json({ error: 'Invalid client_id or redirect_uri' }, { status: 400 });
   }
 
@@ -62,7 +71,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported code_challenge_method' }, { status: 400 });
   }
 
-  // 使用 JWT 作为授权码
   const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
   const code = await new SignJWT({
     user,

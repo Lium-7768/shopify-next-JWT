@@ -2,7 +2,6 @@ import { SignJWT, jwtVerify } from 'jose';
 import { createSecretKey, createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
-// 定义 JWT payload 的类型，添加索引签名以兼容 JWTPayload
 interface AuthData {
   user: {
     id: string;
@@ -10,7 +9,7 @@ interface AuthData {
   };
   code_challenge?: string;
   exp: number;
-  [key: string]: any; // 添加索引签名
+  [key: string]: any;
 }
 
 export async function POST(req: NextRequest) {
@@ -20,11 +19,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported grant_type' }, { status: 400 });
   }
 
+  console.log('Environment CLIENT_ID:', process.env.CLIENT_ID);
+  console.log('Environment CLIENT_SECRET:', process.env.CLIENT_SECRET);
+  console.log('Received client_id:', client_id);
+  console.log('Received client_secret:', client_secret);
+
   if (client_id !== process.env.CLIENT_ID || client_secret !== process.env.CLIENT_SECRET) {
+    console.log('Validation failed: Invalid client credentials');
     return NextResponse.json({ error: 'Invalid client credentials' }, { status: 400 });
   }
 
-  // 验证授权码（JWT）
   const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
   let authData: AuthData;
   try {
@@ -34,7 +38,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 });
   }
 
-  // PKCE 验证
   if (authData.code_challenge) {
     if (!code_verifier) {
       return NextResponse.json({ error: 'Missing code_verifier' }, { status: 400 });
