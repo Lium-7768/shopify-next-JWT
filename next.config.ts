@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
     JWT_SECRET: process.env.JWT_SECRET,
     REDIS_URL: process.env.REDIS_URL,
   },
-  telemetry: false
 };
 
 export default nextConfig;
