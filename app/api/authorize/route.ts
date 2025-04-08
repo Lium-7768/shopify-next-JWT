@@ -2,6 +2,17 @@ import { SignJWT } from 'jose';
 import { createSecretKey } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
+// 定义 JWT payload 的类型，添加索引签名以兼容 JWTPayload
+interface AuthData {
+  user: {
+    id: string;
+    email: string;
+  };
+  code_challenge?: string;
+  exp: number;
+  [key: string]: any; // 添加索引签名
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const client_id = searchParams.get('client_id');
@@ -56,7 +67,7 @@ export async function POST(req: NextRequest) {
   const code = await new SignJWT({
     user,
     code_challenge,
-    exp: Math.floor(Date.now() / 1000) + 600, // 10 分钟过期
+    exp: Math.floor(Date.now() / 1000) + 600,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .sign(secret);

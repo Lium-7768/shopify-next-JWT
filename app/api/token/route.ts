@@ -2,6 +2,17 @@ import { SignJWT, jwtVerify } from 'jose';
 import { createSecretKey, createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
+// 定义 JWT payload 的类型，添加索引签名以兼容 JWTPayload
+interface AuthData {
+  user: {
+    id: string;
+    email: string;
+  };
+  code_challenge?: string;
+  exp: number;
+  [key: string]: any; // 添加索引签名
+}
+
 export async function POST(req: NextRequest) {
   const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = await req.json();
 
@@ -15,10 +26,10 @@ export async function POST(req: NextRequest) {
 
   // 验证授权码（JWT）
   const secret = createSecretKey(process.env.JWT_SECRET || 'dGhpcy1pcy1hLXNlY3VyZS1zZWNyZXQtZm9yLWp3dC1zaWduaW5n', 'utf-8');
-  let authData;
+  let authData: AuthData;
   try {
     const { payload } = await jwtVerify(code, secret, { algorithms: ['HS256'] });
-    authData = payload;
+    authData = payload as AuthData;
   } catch (error) {
     return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 });
   }

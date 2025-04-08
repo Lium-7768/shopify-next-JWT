@@ -31,7 +31,7 @@ export default function Login() {
           response_type,
           code_challenge,
           code_challenge_method,
-          user: { id: 'user123', email },
+          user: { id: 'user123', email }, // 确保 user 结构正确
         }),
       });
       if (res.ok) {
