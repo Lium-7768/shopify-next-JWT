@@ -13,8 +13,21 @@ interface AuthData {
 }
 
 export async function POST(req: NextRequest) {
-  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = await req.json();
+  let body: any;
+  const contentType = req.headers.get('content-type') || '';
 
+  if (contentType.includes('application/json')) {
+    body = await req.json();
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    const formData = await req.formData();
+    body = Object.fromEntries(formData);
+  } else {
+    return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
+  }
+
+  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = body;
+
+  // 其余逻辑保持不变
   console.log('Received grant_type:', grant_type);
   console.log('Received code:', code);
   console.log('Received redirect_uri:', redirect_uri);
@@ -34,7 +47,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid client credentials' }, { status: 400 });
   }
 
-  // 添加 redirect_uri 验证
   if (redirect_uri !== 'https://shopify.com/authentication/63864635466/login/external/callback') {
     console.log('Validation failed: Invalid redirect_uri');
     return NextResponse.json({ error: 'Invalid redirect_uri' }, { status: 400 });
