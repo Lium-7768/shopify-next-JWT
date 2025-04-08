@@ -15,19 +15,23 @@ interface AuthData {
 export async function POST(req: NextRequest) {
   let body: any;
   const contentType = req.headers.get('content-type') || '';
+  console.log('Content-Type:', contentType);
 
+  // 支持 application/json 和 application/x-www-form-urlencoded
   if (contentType.includes('application/json')) {
     body = await req.json();
   } else if (contentType.includes('application/x-www-form-urlencoded')) {
     const formData = await req.formData();
     body = Object.fromEntries(formData);
   } else {
+    console.log('Validation failed: Unsupported content type');
     return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
   }
 
+  console.log('Raw request body:', body);
+
   const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = body;
 
-  // 其余逻辑保持不变
   console.log('Received grant_type:', grant_type);
   console.log('Received code:', code);
   console.log('Received redirect_uri:', redirect_uri);
