@@ -87,7 +87,10 @@ export async function POST(req: NextRequest) {
     const secret = createSecretKey(process.env.JWT_SECRET, 'utf-8');
     let authData: AuthData;
     try {
-      const { payload } = await jwtVerify(code, secret, { algorithms: ['HS256'] });
+      const { payload } = await jwtVerify(code, secret, {
+        algorithms: ['HS256'],
+        clockTolerance: 0, // 不允许时钟偏差
+      });
       authData = payload as AuthData;
       console.log('Decoded authData:', authData);
     } catch (error) {
@@ -110,16 +113,20 @@ export async function POST(req: NextRequest) {
       console.log('No code_challenge provided in authData, skipping PKCE verification');
     }
 
+    // 生成 access_token
     const accessToken = await new SignJWT({ sub: authData.user.id })
       .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
       .setExpirationTime('1h')
       .sign(secret);
 
+    // 生成 id_token
     const idToken = await new SignJWT({
       sub: authData.user.id,
       email: authData.user.email,
       iss: 'https://shopify-next-jwt.vercel.app',
       aud: client_id,
+      iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     })
       .setProtectedHeader({ alg: 'HS256' })
