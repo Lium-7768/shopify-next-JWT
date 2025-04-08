@@ -1,28 +1,32 @@
-import { NextResponse } from 'next/server';
-import { importPKCS8, exportJWK } from 'jose';
+import { createPublicKey } from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
+import { PRIVATE_KEY } from '@/app/constants/keys';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    if (!process.env.PRIVATE_KEY) {
-      console.error('PRIVATE_KEY is not set in environment variables');
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-    }
+    // Convert private key to public key
+    const publicKey = createPublicKey({
+      key: PRIVATE_KEY,
+      format: 'pem',
+    });
 
-    // 导入私钥
-    const privateKey = await importPKCS8(process.env.PRIVATE_KEY, 'RS256');
+    // Export public key components in JWK format
+    const jwk = publicKey.export({ format: 'jwk' });
 
-    // 提取公钥并转换为 JWK 格式
-    const publicKeyJwk = await exportJWK(privateKey);
-    publicKeyJwk.kid = '1'; // 设置一个唯一的 key ID
-    publicKeyJwk.use = 'sig'; // 表示用于签名
-    publicKeyJwk.alg = 'RS256'; // 算法
+    // Add required JWK parameters
+    const completeJwk = {
+      ...jwk,
+      use: 'sig',
+      alg: 'RS256',
+      kid: '1', // Key ID
+    };
 
-    // 返回 JWKS 格式
+    // Return JWKS
     return NextResponse.json({
-      keys: [publicKeyJwk],
+      keys: [completeJwk]
     });
   } catch (error) {
     console.error('Error generating JWKS:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 }
