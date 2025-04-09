@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     issuer: baseUrl,                                                  // 3.2 节
     authorization_endpoint: `${baseUrl}/api/authorize`,               // 3.3 节
     token_endpoint: `${baseUrl}/api/token`,                           // 3.4 节
-    jwks_uri: `${baseUrl}/.well-known/jwks.json`,                      // 3.5 节
+    jwks_uri: `${baseUrl}/.well-known/jwks.jsn`,                      // 3.5 节
     response_types_supported: ['code'],                               // 3.6 节
     subject_types_supported: ['public'],                              // 3.7 节
     id_token_signing_alg_values_supported: ['RS256'],                 // 3.8 节
