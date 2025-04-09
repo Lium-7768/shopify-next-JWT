@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       'address'
     ],
     token_endpoint_auth_methods_supported: ['client_secret_basic'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
+    grant_types_supported: ['authorization_code'],
     code_challenge_methods_supported: ['S256'],
     userinfo_endpoint: `${baseUrl}/api/userinfo`,
     end_session_endpoint: `${baseUrl}/api/logout`,

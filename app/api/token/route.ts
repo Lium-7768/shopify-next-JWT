@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     console.log('Request body:', body);
 
-    const { grant_type, code, redirect_uri, code_verifier } = body;
+    const { grant_type, code, redirect_uri, code_verifier, refresh_token } = body;
 
     // 如果没有从 Basic Auth 获取 client_id 和 client_secret，则尝试从请求体中获取
     if (!client_id) client_id = body.client_id;
@@ -69,10 +69,11 @@ export async function POST(req: NextRequest) {
       grant_type,
       redirect_uri,
       client_id,
-      code_verifier: code_verifier ? '[PRESENT]' : '[NOT PRESENT]'
+      code_verifier: code_verifier ? '[PRESENT]' : '[NOT PRESENT]',
+      refresh_token: refresh_token ? '[PRESENT]' : '[NOT PRESENT]'
     });
 
-    if (grant_type !== 'authorization_code') {
+    if (grant_type !== 'authorization_code' && grant_type !== 'refresh_token') {
       console.log('Invalid grant_type:', grant_type);
       return NextResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
     }
@@ -82,7 +83,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_client' }, { status: 401 });
     }
 
-    if (!redirect_uri.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
+    // 对于授权码类型，验证重定向 URI
+    if (grant_type === 'authorization_code' && 
+        (!redirect_uri.startsWith('https://shopify.com/authentication/') || 
+         !redirect_uri.includes('/login/external/callback'))) {
       console.log('Invalid redirect_uri:', redirect_uri);
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
@@ -100,101 +104,191 @@ export async function POST(req: NextRequest) {
 
       console.log('Keys imported successfully');
 
-      let authData: AuthData;
-      try {
-        // 使用公钥验证 code
-        const { payload } = await jwtVerify(code, publicKey, {
-          algorithms: ['RS256'],
-          clockTolerance: 60,  // Allow 1 minute clock skew
-          issuer: process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app',
-          audience: client_id,
-        });
-        authData = payload as AuthData;
-        console.log('Code verification successful');
-      } catch (error: unknown) {
-        const apiError = error as ApiError;
-        console.error('Code verification failed:', apiError);
-        return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
-      }
-
-      // 如果 code_challenge 存在，则必须验证 code_verifier
-      if (authData.code_challenge) {
-        if (!code_verifier) {
-          console.log('Missing code_verifier');
-          return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
-        }
-        const verifierHash = createHash('sha256').update(code_verifier).digest('base64url');
-        console.log('PKCE verification:', {
-          expected: authData.code_challenge,
-          actual: verifierHash
-        });
-        if (verifierHash !== authData.code_challenge) {
-          console.log('Invalid code_verifier');
-          return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
-        }
-        console.log('PKCE verification successful');
-      }
-
       const now = Math.floor(Date.now() / 1000);
-      const expiresIn = 3600; // 1 hour
-
-      console.log('Generating tokens...');
-
+      const accessTokenExpiresIn = 3600; // 1 hour
+      const refreshTokenExpiresIn = 30 * 24 * 3600; // 30 days
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
 
-      // 生成 access_token
-      const accessToken = await new SignJWT({
-        iss: baseUrl,
-        sub: authData.sub,
-        aud: client_id,
-        jti: crypto.randomUUID(),
-        scope: authData.scope,
-      })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
-        .setIssuedAt()
-        .setExpirationTime(now + expiresIn)
-        .sign(privateKey);
-
-      // 生成 id_token
-      const idToken = await new SignJWT({
-        iss: baseUrl,
-        sub: authData.sub,
-        aud: client_id,
-        exp: now + expiresIn,
-        iat: now,
-        auth_time: authData.auth_time,
-        nonce: authData.nonce,
-        email: authData.user.email,
-        email_verified: true,
-        name: authData.user.name,
-        given_name: authData.user.given_name,
-        family_name: authData.user.family_name,
-        locale: authData.user.locale,
-        at_hash: createHash('sha256').update(accessToken).digest('base64url').substring(0, 32),
-      })
-        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
-        .sign(privateKey);
-
-      console.log('Tokens generated successfully');
-
-      // Return response with proper headers
-      return new NextResponse(
-        JSON.stringify({
-          access_token: accessToken,
-          token_type: 'Bearer',
-          expires_in: expiresIn,
-          id_token: idToken,
-          scope: authData.scope
-        }),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store',
-            'Pragma': 'no-cache'
-          }
+      // 处理 authorization_code 授权类型
+      if (grant_type === 'authorization_code') {
+        let authData: AuthData;
+        try {
+          // 使用公钥验证 code
+          const { payload } = await jwtVerify(code, publicKey, {
+            algorithms: ['RS256'],
+            clockTolerance: 60,  // Allow 1 minute clock skew
+            issuer: baseUrl,
+            audience: client_id,
+          });
+          authData = payload as AuthData;
+          console.log('Code verification successful');
+        } catch (error: unknown) {
+          const apiError = error as ApiError;
+          console.error('Code verification failed:', apiError);
+          return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
         }
-      );
+
+        // 如果 code_challenge 存在，则必须验证 code_verifier
+        if (authData.code_challenge) {
+          if (!code_verifier) {
+            console.log('Missing code_verifier');
+            return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+          }
+          const verifierHash = createHash('sha256').update(code_verifier).digest('base64url');
+          console.log('PKCE verification:', {
+            expected: authData.code_challenge,
+            actual: verifierHash
+          });
+          if (verifierHash !== authData.code_challenge) {
+            console.log('Invalid code_verifier');
+            return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+          }
+          console.log('PKCE verification successful');
+        }
+
+        console.log('Generating tokens...');
+
+        // 生成 access_token
+        const accessToken = await new SignJWT({
+          iss: baseUrl,
+          sub: authData.sub,
+          aud: client_id,
+          jti: crypto.randomUUID(),
+          scope: authData.scope,
+        })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setIssuedAt()
+          .setExpirationTime(now + accessTokenExpiresIn)
+          .sign(privateKey);
+
+        // 生成 refresh_token
+        const refreshToken = await new SignJWT({
+          iss: baseUrl,
+          sub: authData.sub,
+          aud: client_id,
+          jti: crypto.randomUUID(),
+          scope: authData.scope,
+          user: authData.user, // 在 refresh token 中包含用户信息，以便刷新时使用
+        })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setIssuedAt()
+          .setExpirationTime(now + refreshTokenExpiresIn)
+          .sign(privateKey);
+
+        // 生成 id_token
+        const idToken = await new SignJWT({
+          iss: baseUrl,
+          sub: authData.sub,
+          aud: client_id,
+          exp: now + accessTokenExpiresIn,
+          iat: now,
+          auth_time: authData.auth_time,
+          nonce: authData.nonce,
+          email: authData.user.email,
+          email_verified: true,
+          name: authData.user.name,
+          given_name: authData.user.given_name,
+          family_name: authData.user.family_name,
+          locale: authData.user.locale,
+          at_hash: createHash('sha256').update(accessToken).digest('base64url').substring(0, 32),
+        })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .sign(privateKey);
+
+        console.log('Tokens generated successfully');
+
+        // 返回所有令牌
+        return new NextResponse(
+          JSON.stringify({
+            access_token: accessToken,
+            token_type: 'Bearer',
+            expires_in: accessTokenExpiresIn,
+            refresh_token: refreshToken,
+            id_token: idToken,
+            scope: authData.scope
+          }),
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store',
+              'Pragma': 'no-cache'
+            }
+          }
+        );
+      } 
+      // 处理 refresh_token 授权类型
+      else if (grant_type === 'refresh_token') {
+        if (!refresh_token) {
+          console.log('Missing refresh_token');
+          return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+        }
+
+        let refreshTokenData: any;
+        try {
+          // 验证 refresh_token
+          const { payload } = await jwtVerify(refresh_token, publicKey, {
+            algorithms: ['RS256'],
+            clockTolerance: 60,  // Allow 1 minute clock skew
+            issuer: baseUrl,
+            audience: client_id,
+          });
+          refreshTokenData = payload;
+          console.log('Refresh token verification successful');
+        } catch (error: unknown) {
+          const apiError = error as ApiError;
+          console.error('Refresh token verification failed:', apiError);
+          return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+        }
+
+        // 生成新的访问令牌
+        const newAccessToken = await new SignJWT({
+          iss: baseUrl,
+          sub: refreshTokenData.sub,
+          aud: client_id,
+          jti: crypto.randomUUID(),
+          scope: refreshTokenData.scope,
+        })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setIssuedAt()
+          .setExpirationTime(now + accessTokenExpiresIn)
+          .sign(privateKey);
+
+        // 生成新的刷新令牌（可选）
+        const newRefreshToken = await new SignJWT({
+          iss: baseUrl,
+          sub: refreshTokenData.sub,
+          aud: client_id,
+          jti: crypto.randomUUID(),
+          scope: refreshTokenData.scope,
+          user: refreshTokenData.user,
+        })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setIssuedAt()
+          .setExpirationTime(now + refreshTokenExpiresIn)
+          .sign(privateKey);
+
+        console.log('New tokens generated successfully');
+
+        // 返回新的访问令牌和刷新令牌
+        return new NextResponse(
+          JSON.stringify({
+            access_token: newAccessToken,
+            token_type: 'Bearer',
+            expires_in: accessTokenExpiresIn,
+            refresh_token: newRefreshToken,
+            scope: refreshTokenData.scope
+          }),
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store',
+              'Pragma': 'no-cache'
+            }
+          }
+        );
+      }
     } catch (error: unknown) {
       const apiError = error as ApiError;
       console.error('Error processing keys:', apiError);
