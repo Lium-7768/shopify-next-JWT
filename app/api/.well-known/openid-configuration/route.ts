@@ -7,16 +7,16 @@ export async function GET(req: NextRequest) {
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/api/authorize`,
     token_endpoint: `${baseUrl}/api/token`,
-    jwks_uri: `${baseUrl}/.well-known/jwks.json`,
+    jwks_uri: `${baseUrl}/.well-known/jwks.jsn`,
     response_types_supported: ['code'],
     subject_types_supported: ['public'],
     id_token_signing_alg_values_supported: ['RS256'],
     scopes_supported: [
       'openid',
-      'profile',
       'email',
-      'customer_read',
-      'customer_write'
+      // 'profile',
+      // 'customer_read',
+      // 'customer_write'
     ],
     claims_supported: [
       'sub',
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       'address'
     ],
     token_endpoint_auth_methods_supported: ['client_secret_basic'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     userinfo_endpoint: `${baseUrl}/api/userinfo`,
     end_session_endpoint: `${baseUrl}/api/logout`,
