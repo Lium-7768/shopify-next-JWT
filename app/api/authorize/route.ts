@@ -8,7 +8,34 @@ interface ApiError extends Error {
   code?: string;
 }
 
-const VALID_SCOPES = ['openid', 'profile', 'email', 'customer_read', 'customer_write'];
+// 更新有效作用域数组，添加 customer-account-api 相关权限
+const VALID_SCOPES = [
+  'openid', 
+  'profile', 
+  'email', 
+  'customer_read', 
+  'customer_write',
+  'customer-account-api:full',  // 添加Shopify账户API完全权限
+  'customer-account-api:read',  // 添加Shopify账户API读取权限
+  'customer-account-api:write'  // 添加Shopify账户API写入权限
+];
+
+// 验证重定向URI的函数，支持多种Shopify回调格式
+function isValidRedirectUri(uri: string | null): boolean {
+  if (!uri) return false;
+  
+  // 支持多种Shopify回调URL格式
+  const validPatterns = [
+    // 原来的格式
+    /^https:\/\/shopify\.com\/authentication\/\d+\/login\/external\/callback/,
+    // 新的格式
+    /^https:\/\/shopify\.com\/\d+\/account\/callback/,
+    // 另一个可能的格式(带source参数)
+    /^https:\/\/shopify\.com\/\d+\/account\/callback\?source=core/
+  ];
+  
+  return validPatterns.some(pattern => pattern.test(uri));
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,6 +47,9 @@ export async function GET(req: NextRequest) {
   const response_type = searchParams.get('response_type');
   const code_challenge = searchParams.get('code_challenge');
   const code_challenge_method = searchParams.get('code_challenge_method');
+  // 添加对Shopify特有参数的支持
+  const acr_values = searchParams.get('acr_values');
+  const locale = searchParams.get('locale');
 
   console.log('GET /api/authorize - Request parameters:', {
     client_id,
@@ -29,7 +59,9 @@ export async function GET(req: NextRequest) {
     nonce,
     response_type,
     code_challenge,
-    code_challenge_method
+    code_challenge_method,
+    acr_values,
+    locale
   });
 
   if (response_type !== 'code') {
@@ -42,7 +74,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized_client' }, { status: 401 });
   }
 
-  if (!redirect_uri?.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
+  if (!isValidRedirectUri(redirect_uri)) {
     console.log('Invalid redirect_uri:', redirect_uri);
     return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
   }
@@ -59,6 +91,13 @@ export async function GET(req: NextRequest) {
   redirectUrl.searchParams.set('state', state || '');
   redirectUrl.searchParams.set('nonce', nonce || '');
   redirectUrl.searchParams.set('response_type', response_type || '');
+  // 传递Shopify特有参数
+  if (acr_values) {
+    redirectUrl.searchParams.set('acr_values', acr_values);
+  }
+  if (locale) {
+    redirectUrl.searchParams.set('locale', locale);
+  }
   if (code_challenge) {
     redirectUrl.searchParams.set('code_challenge', code_challenge);
     redirectUrl.searchParams.set('code_challenge_method', code_challenge_method || '');
@@ -82,6 +121,8 @@ export async function POST(req: NextRequest) {
       response_type,
       code_challenge,
       code_challenge_method,
+      acr_values,  // 添加Shopify特有参数
+      locale,      // 添加Shopify特有参数
       user
     } = body;
 
@@ -95,7 +136,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'unauthorized_client' }, { status: 401 });
     }
 
-    if (!redirect_uri?.startsWith('https://shopify.com/authentication/') || !redirect_uri.includes('/login/external/callback')) {
+    if (!isValidRedirectUri(redirect_uri)) {
       console.log('Invalid redirect_uri:', redirect_uri);
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
@@ -124,7 +165,8 @@ export async function POST(req: NextRequest) {
 
       const now = Math.floor(Date.now() / 1000);
 
-      const code = await new SignJWT({
+      // 生成JWT代码
+      const jwtCode = await new SignJWT({
         iss: baseUrl,
         sub: user.id,
         aud: client_id,
@@ -135,6 +177,8 @@ export async function POST(req: NextRequest) {
         code_challenge,
         code_challenge_method,
         scope: scope || 'openid profile email',
+        acr_values, // 包含认证上下文引用值
+        locale,     // 包含语言区域设置
         user: {
           id: user.id,
           email: user.email,
@@ -142,7 +186,7 @@ export async function POST(req: NextRequest) {
           name: user.name || user.email.split('@')[0],
           given_name: user.given_name || '',
           family_name: user.family_name || '',
-          locale: user.locale || 'en'
+          locale: locale || user.locale || 'en'
         }
       })
         .setProtectedHeader({ alg: 'RS256', typ: 'at+jwt', kid: '1' })
@@ -153,8 +197,21 @@ export async function POST(req: NextRequest) {
 
       console.log('JWT code generated successfully');
 
+      // 生成符合Shopify格式的代码 (可选，取决于Shopify期望的格式)
+      // 如果你想完全模拟Shopify的代码格式，可以这样做:
+      const shopifyStyleCode = `shcac_${Buffer.from(jwtCode).toString('base64').replace(/=/g, '')}`;
+      
+      // 默认使用JWT格式，如果需要完全匹配Shopify格式，可以改用shopifyStyleCode
+      const codeToUse = jwtCode; // 或 shopifyStyleCode
+      
       const redirectUrl = new URL(redirect_uri);
-      redirectUrl.searchParams.set('code', code);
+      
+      // 添加source=core参数（如果是新格式的回调URL且尚未有source参数）
+      if (redirect_uri.includes('/account/callback') && !redirect_uri.includes('source=')) {
+        redirectUrl.searchParams.set('source', 'core');
+      }
+      
+      redirectUrl.searchParams.set('code', codeToUse);
       if (state) {
         redirectUrl.searchParams.set('state', state);
       }
