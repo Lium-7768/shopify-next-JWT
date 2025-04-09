@@ -7,6 +7,7 @@ import { PRIVATE_KEY } from '../../constants/keys';
  * 参考: https://datatracker.ietf.org/doc/html/rfc7517#section-5
  */
 export async function GET(req: NextRequest) {
+  console.log('--------------- get jwks ---------------');
   try {
     // 从私钥创建公钥
     const publicKey = createPublicKey({
