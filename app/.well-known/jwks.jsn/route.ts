@@ -50,6 +50,8 @@ export async function GET(req: NextRequest) {
       throw new Error('缺少必需的 RSA 参数 (n 和 e)');
     }
 
+    console.log('completeJwk:', completeJwk);
+
     // 返回 JWKS（一个包含 keys 数组的 JSON 对象），根据 RFC 7517 第 5 节
     return new NextResponse(
       JSON.stringify({
