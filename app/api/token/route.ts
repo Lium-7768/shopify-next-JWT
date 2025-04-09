@@ -197,6 +197,15 @@ export async function POST(req: NextRequest) {
 
         console.log('Tokens generated successfully');
 
+        console.log('accessToken:', {
+          access_token: accessToken,
+          token_type: 'Bearer',
+          expires_in: accessTokenExpiresIn,
+          refresh_token: refreshToken,
+          id_token: idToken,
+          scope: authData.scope
+        });
+
         // 返回所有令牌
         return new NextResponse(
           JSON.stringify({
