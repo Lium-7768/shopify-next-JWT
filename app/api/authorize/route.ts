@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
         iss: baseUrl,
         sub: user.id,
         aud: client_id,
-        exp: now + 600, // 10 minutes
+        exp: now + 60, // 1 minutes
         iat: now,
         auth_time: now,
         nonce: nonce,

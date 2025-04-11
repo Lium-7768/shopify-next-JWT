@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       console.log('Keys imported successfully');
 
       const now = Math.floor(Date.now() / 1000);
-      const accessTokenExpiresIn = 3600; // 1 hour
+      const accessTokenExpiresIn = 60; // 1 minutes
       const refreshTokenExpiresIn = 30 * 24 * 3600; // 30 days
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://shopify-next-jwt.vercel.app';
 
