@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       // 推荐参数
       use: 'sig',                // 公钥用途: 签名 - 4.2 节
       alg: 'RS256',              // 签名算法 - 4.4 节 
-      kid: '1',                  // 密钥 ID - 4.5 节
+      kid: 'idp-key-2025-04-10',                  // 密钥 ID - 4.5 节
 
       // RFC 7517 4.7 节中的额外可选标准参数
       x5c: [],                   // X.509 证书链 (可选)
