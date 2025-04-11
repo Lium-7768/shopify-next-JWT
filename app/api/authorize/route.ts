@@ -219,6 +219,9 @@ export async function POST(req: NextRequest) {
       
       // 添加code和state参数
       redirectUrl.searchParams.set('code', codeToUse);
+      if (state) {
+        redirectUrl.searchParams.set('state', state);
+      }
 
       console.log('Redirect URL generated:', redirectUrl.toString());
       return NextResponse.json({ redirectUrl: redirectUrl.toString() });
