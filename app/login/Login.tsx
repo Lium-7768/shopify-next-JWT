@@ -13,6 +13,9 @@ export default function Login() {
   const response_type = searchParams.get("response_type");
   const code_challenge = searchParams.get("code_challenge");
   const code_challenge_method = searchParams.get("code_challenge_method");
+  const acr_values = searchParams.get("acr_values") || "provider:shopify";
+  const locale = searchParams.get("locale") || "en";
+  const nonce = searchParams.get("nonce") || '';
 
   const [email, setEmail] = useState("zacharyhou@aaxis.io");
   const [password, setPassword] = useState("password123");
@@ -31,6 +34,9 @@ export default function Login() {
         code_challenge,
         code_challenge_method,
         email,
+        nonce,
+        acr_values,
+        locale,
         user: { id: "user123", email },
       }),
     });
