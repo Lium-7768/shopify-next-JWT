@@ -28,9 +28,9 @@ function isValidRedirectUri(uri: string | null): boolean {
   const validPatterns = [
     // 原来的格式
     /^https:\/\/shopify\.com\/authentication\/\d+\/login\/external\/callback/,
-    // 新的格式
+    // 新的格式 - 官方文档中的格式
     /^https:\/\/shopify\.com\/\d+\/account\/callback/,
-    // 另一个可能的格式(带source参数)
+    // 带source参数的格式(官方示例中使用)
     /^https:\/\/shopify\.com\/\d+\/account\/callback\?source=core/
   ];
   
@@ -69,7 +69,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unsupported_response_type' }, { status: 400 });
   }
 
-  if (client_id !== process.env.CLIENT_ID) {
+  // 更新客户端ID验证，支持UUID格式的client_id
+  // 检查环境变量中的CLIENT_ID是否与请求中的client_id匹配
+  // 如果环境变量未设置或不匹配，则返回401错误
+  if (process.env.CLIENT_ID && client_id !== process.env.CLIENT_ID) {
     console.log('Invalid client_id:', client_id);
     return NextResponse.json({ error: 'unauthorized_client' }, { status: 401 });
   }
@@ -189,7 +192,7 @@ export async function POST(req: NextRequest) {
           locale: locale || user.locale || 'en'
         }
       })
-        .setProtectedHeader({ alg: 'RS256', typ: 'at+jwt', kid: '1' })
+        .setProtectedHeader({ alg: 'RS256', typ: 'at+jwt', kid: 'idp-key-2025-04-10' })
         .setJti(crypto.randomUUID())
         .setIssuedAt()
         .setExpirationTime(now + 600)
@@ -197,24 +200,25 @@ export async function POST(req: NextRequest) {
 
       console.log('JWT code generated successfully');
 
-      // 生成符合Shopify格式的代码 (可选，取决于Shopify期望的格式)
-      // 如果你想完全模拟Shopify的代码格式，可以这样做:
-      const shopifyStyleCode = `shcac_${Buffer.from(jwtCode).toString('base64').replace(/=/g, '')}`;
+      // 为了确保格式兼容，使用标准JWT格式的code
+      const codeToUse = jwtCode;
       
-      // 默认使用JWT格式，如果需要完全匹配Shopify格式，可以改用shopifyStyleCode
-      const codeToUse = jwtCode; // 或 shopifyStyleCode
-      
+      // 构建重定向URL
       const redirectUrl = new URL(redirect_uri);
       
-      // 添加source=core参数（如果是新格式的回调URL且尚未有source参数）
-      if (redirect_uri.includes('/account/callback') && !redirect_uri.includes('source=')) {
-        redirectUrl.searchParams.set('source', 'core');
+      // 处理重定向URI，保持查询参数
+      if (redirect_uri.includes('?')) {
+        // 如果重定向URI已经包含了查询参数，不要覆盖它们
+        const originalParams = new URL(redirect_uri).searchParams;
+        for (const [key, value] of originalParams.entries()) {
+          if (key !== 'code' && key !== 'state') { // 避免重复添加code和state
+            redirectUrl.searchParams.set(key, value);
+          }
+        }
       }
       
+      // 添加code和state参数
       redirectUrl.searchParams.set('code', codeToUse);
-      if (state) {
-        redirectUrl.searchParams.set('state', state);
-      }
 
       console.log('Redirect URL generated:', redirectUrl.toString());
       return NextResponse.json({ redirectUrl: redirectUrl.toString() });

@@ -84,11 +84,24 @@ export async function POST(req: NextRequest) {
     }
 
     // 对于授权码类型，验证重定向 URI
-    if (grant_type === 'authorization_code' && 
-        (!redirect_uri.startsWith('https://shopify.com/authentication/') || 
-         !redirect_uri.includes('/login/external/callback'))) {
-      console.log('Invalid redirect_uri:', redirect_uri);
-      return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+    if (grant_type === 'authorization_code') {
+      // 创建有效的重定向URI模式列表
+      const validRedirectPatterns = [
+        // 原来的格式
+        /^https:\/\/shopify\.com\/authentication\/\d+\/login\/external\/callback/,
+        // 新的格式 - 官方文档中的格式
+        /^https:\/\/shopify\.com\/\d+\/account\/callback/,
+        // 带source参数的格式(官方示例中使用)
+        /^https:\/\/shopify\.com\/\d+\/account\/callback\?source=core/
+      ];
+      
+      // 检查重定向URI是否匹配任何有效模式
+      const isValidRedirectUri = validRedirectPatterns.some(pattern => pattern.test(redirect_uri));
+      
+      if (!isValidRedirectUri) {
+        console.log('Invalid redirect_uri:', redirect_uri);
+        return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+      }
     }
 
     console.log('Importing keys...');
@@ -156,7 +169,7 @@ export async function POST(req: NextRequest) {
           jti: crypto.randomUUID(),
           scope: authData.scope,
         })
-          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'idp-key-2025-04-10' })
           .setIssuedAt()
           .setExpirationTime(now + accessTokenExpiresIn)
           .sign(privateKey);
@@ -170,7 +183,7 @@ export async function POST(req: NextRequest) {
           scope: authData.scope,
           user: authData.user, // 在 refresh token 中包含用户信息，以便刷新时使用
         })
-          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'idp-key-2025-04-10' })
           .setIssuedAt()
           .setExpirationTime(now + refreshTokenExpiresIn)
           .sign(privateKey);
@@ -192,7 +205,7 @@ export async function POST(req: NextRequest) {
           locale: authData.user.locale,
           at_hash: createHash('sha256').update(accessToken).digest('base64url').substring(0, 32),
         })
-          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'idp-key-2025-04-10' })
           .sign(privateKey);
 
         console.log('Tokens generated successfully');
@@ -258,7 +271,7 @@ export async function POST(req: NextRequest) {
           jti: crypto.randomUUID(),
           scope: refreshTokenData.scope,
         })
-          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'idp-key-2025-04-10' })
           .setIssuedAt()
           .setExpirationTime(now + accessTokenExpiresIn)
           .sign(privateKey);
@@ -272,7 +285,7 @@ export async function POST(req: NextRequest) {
           scope: refreshTokenData.scope,
           user: refreshTokenData.user,
         })
-          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: '1' })
+          .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'idp-key-2025-04-10' })
           .setIssuedAt()
           .setExpirationTime(now + refreshTokenExpiresIn)
           .sign(privateKey);
